@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang='en'><head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Audio quality listening test</title>
+<style>
+:root{--bg:#14161a;--card:#1e2127;--line:#2c3038;--tx:#e8e6e3;--dim:#9aa0aa;
+      --acc:#5b9cff;--ok:#3fbf7f}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;
+     background:var(--bg);color:var(--tx)}
+main{padding:24px;max-width:1000px;margin:0 auto}
+h1{font-size:19px;margin:0 0 6px}
+h2{font-size:17px;margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+      padding:18px;margin-bottom:14px}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.dim{color:var(--dim);font-size:13px}
+button{background:var(--acc);color:#fff;border:0;border-radius:6px;
+       padding:9px 16px;font-size:14px;cursor:pointer;margin:2px 0}
+button:disabled{background:#3a3f47;cursor:not-allowed}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--tx)}
+input,textarea{background:#101216;color:var(--tx);border:1px solid var(--line);
+               border-radius:6px;padding:7px 10px;font-size:14px}
+textarea{width:100%;font-family:ui-monospace,monospace;font-size:12px}
+audio{width:100%;height:34px}
+.promptbox{padding:14px 18px}
+.prompttxt{margin:8px 0;font-size:14px;color:var(--tx);font-style:italic}
+.stim{flex:1 1 260px;min-width:240px}
+.stim .lab{font-weight:600;margin-bottom:4px}
+.sliderwrap{margin-top:6px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.scale{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim)}
+.touched .lab::after{content:' ✓';color:var(--ok)}
+.progress{height:4px;background:#262a31;border-radius:2px;margin:12px 0 18px}
+.progress i{display:block;height:100%;background:var(--acc);border-radius:2px}
+code{background:#101216;padding:2px 6px;border-radius:5px;font-size:12px}
+ul{margin:8px 0;padding-left:20px}
+li{margin:3px 0}
+</style></head><body>
+<main><div id='app'></div></main>
+<script src='CONFIG.js'></script>
+<script src='manifest.js'></script>
+<script>
+const LETTERS=['A','B','C'], LS='gram_lt_v1';
+let S=null;                     // session state
+const $=id=>document.getElementById(id);
+function esc(s){return (s||'').replace(/[&<>"]/g,
+  m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+function save(){ localStorage.setItem(LS, JSON.stringify(S)); }
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){
+  const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function startPage(){
+  const resumed = localStorage.getItem(LS);
+  $('app').innerHTML=`
+  <div class='card'><h1>${CONFIG.title||'Audio quality listening test'}</h1>
+  <p>You will hear <b>${MANIFEST.items.length} items</b>. Each item is the same
+  generated audio rendered by <b>three different systems</b>, presented in a
+  random order as Version A, B and C. Rate the <b>overall audio quality</b> of
+  each version on a 0–100 scale.</p>
+  <ul class='dim'>
+    <li>Use headphones in a quiet environment.</li>
+    <li>Each item shows a short description of what the audio was meant to
+        represent; judge the <b>audio quality</b> (artefacts, noise,
+        distortion, spectral and temporal stability), not the content or
+        how well it matches the description.</li>
+    <li>Listen to each version as many times as you like.</li>
+    <li>Use the full scale: the three versions of an item usually differ.</li>
+    <li>You can go back to earlier items until you submit.</li>
+  </ul>
+  <div class='row'>
+    <input id='rater' placeholder='your initials / rater id' maxlength='32'>
+    <button id='bstart'>Start</button>
+    <span class='dim' id='msg'></span>
+  </div>
+  ${resumed?`<p class='dim' style='margin-top:12px'>An unfinished session
+    exists in this browser. <button class='ghost' id='bresume'>Resume it</button></p>`:''}
+  </div>`;
+  $('bstart').onclick=()=>{
+    const id=$('rater').value.trim();
+    if(!id){$('msg').textContent='please enter an id';return;}
+    begin(id);
+  };
+  const br=$('bresume');
+  if(br) br.onclick=()=>{ S=JSON.parse(localStorage.getItem(LS)); item(); };
+}
+
+function begin(rater){
+  S={rater, started:Date.now(), order:shuffle(MANIFEST.items.map((_,i)=>i)),
+     letters:{}, ratings:{}, comments:{}, cur:0, done:false};
+  S.order.forEach(i=>{
+    S.letters[i]=shuffle([0,1,2]);   // A/B/C -> file index
+  });
+  save(); item();
+}
+
+function item(){
+  const idx=S.order[S.cur];
+  const meta=MANIFEST.items[idx];
+  $('app').innerHTML=`
+  <div class='row' style='justify-content:space-between'>
+    <h2>Item ${S.cur+1} of ${S.order.length}</h2>
+    <span class='dim'>rate every version, then continue</span></div>
+  <div class='progress'><i style='width:${100*S.cur/S.order.length}%'></i></div>
+  ${meta.prompt?`
+  <div class='card promptbox'>
+    <b>What the audio should represent:</b>
+    <div class='prompttxt'>&ldquo;${esc(meta.prompt)}&rdquo;</div>
+    <span class='dim'>Judge the <b>audio quality</b> of each version — artefacts,
+    noise, distortion, spectral and temporal stability — not how much you like
+    the content or how well it matches this description.</span>
+  </div>`:''}
+  <div class='card'>
+    <div class='row'>
+    ${LETTERS.map(L=>{const f=meta.files[S.letters[idx][LETTERS.indexOf(L)]];
+      const k=idx+'_'+L;
+      return `<div class='stim' id='sw_${L}'>
+        <div class='lab'>Version ${L}</div>
+        <audio controls preload='auto' id='au_${L}' src='audio/${f}'></audio>
+        <div class='sliderwrap'>
+          <input type='range' min='0' max='100' value='${S.ratings[k]??50}'
+                 id='sl_${L}' oninput='touch("${L}")' onchange='rate("${L}")'>
+          <div class='scale'><span>0 Bad</span><span>20 Poor</span>
+            <span>40 Fair</span><span>60 Good</span><span>80 Excellent</span>
+            <span>100</span></div>
+        </div></div>`;}).join('')}
+    </div>
+    <div class='row' style='margin-top:12px'>
+      <input id='comment' placeholder='optional comment on this item…'
+             style='flex:1' value='${esc(S.comments[idx]||'')}'>
+    </div>
+    <div class='row' style='margin-top:14px;justify-content:space-between'>
+      <button class='ghost' id='bprev' ${S.cur===0?'disabled':''}>&#8249; previous</button>
+      <button id='bnext'>${S.cur===S.order.length-1?'Submit results':'Next item &#8250;'}</button>
+    </div>
+  </div>`;
+  LETTERS.forEach(L=>{ if(S.ratings[idx+'_'+L]!=null) touch(L); });
+  $('comment').onchange=()=>{S.comments[idx]=$('comment').value;save();};
+  $('bprev').onclick=()=>{S.cur--;save();item();};
+  $('bnext').onclick=()=>{
+    if(!LETTERS.every(L=>$('sw_'+L).classList.contains('touched'))){
+      alert('Please move each slider to rate all three versions first.');return;}
+    if(S.cur===S.order.length-1){ submit(); }
+    else { S.cur++; save(); item(); }
+  };
+  LETTERS.forEach(L=>{$('au_'+L).addEventListener('play',()=>{
+    LETTERS.forEach(M=>{if(M!==L){const a=$('au_'+M);if(a)a.pause();}});});});
+}
+
+function touch(L){ $('sw_'+L).classList.add('touched'); }
+function rate(L){
+  touch(L);
+  const idx=S.order[S.cur];
+  S.ratings[idx+'_'+L]=parseInt($('sl_'+L).value,10);
+  save();
+}
+
+function buildCode(){
+  S.finished=Date.now();
+  const payload={
+    v:1, rater:S.rater, started:S.started, finished:S.finished,
+    items: S.order.map((idx,p)=>{
+      const meta=MANIFEST.items[idx];
+      const fOf=L=>meta.files[S.letters[idx][LETTERS.indexOf(L)]];
+      return { n: meta.n, pos: p+1,
+        letters:{A:fOf('A'),B:fOf('B'),C:fOf('C')},
+        scores:{A:S.ratings[idx+'_A'],B:S.ratings[idx+'_B'],C:S.ratings[idx+'_C']},
+        comment: S.comments[idx]||'' };
+    })
+  };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+}
+
+async function submit(){
+  for(const idx of S.order){
+    if(!LETTERS.every(L=>S.ratings[idx+'_'+L]!=null)){
+      S.cur=S.order.indexOf(idx); save(); item();
+      alert('Item '+(S.cur+1)+' is incomplete — please rate all versions.');
+      return;
+    }
+  }
+  const code=buildCode();
+  let auto='not-configured';
+  if(CONFIG.appsScriptUrl){
+    try{
+      const r=await fetch(CONFIG.appsScriptUrl,{method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({rater:S.rater, code:code})});
+      auto = r.ok ? 'ok' : 'failed';
+    }catch(e){ auto='failed'; }
+  }
+  S.done=true; save();
+  $('app').innerHTML=`
+  <div class='card'><h2>Thank you, ${esc(S.rater)}!</h2>
+   <p>Your responses ${auto==='ok'?'have been recorded automatically.':
+     'are ready to submit below.'}</p>
+   ${auto!=='ok'?`
+   <p class='dim'>Copy your result code and paste it into the submission form
+   (or send it to the experimenter):</p>
+   <textarea id='code' rows='4' readonly>${code}</textarea>
+   <div class='row' style='margin-top:10px'>
+     <button id='bcopy'>Copy code</button>
+     ${CONFIG.formUrl?`<button class='ghost' id='bform'>Open submission form</button>`:''}
+     <button class='ghost' id='bdl'>Download code (.txt)</button>
+   </div>`:`<p class='dim'>You may close this tab. Session code:
+   <code>${code.slice(0,24)}…</code></p>`}
+   <p class='dim' style='margin-top:10px'>Questions / issues:
+   ${esc(CONFIG.contact||'contact the experimenter')}.</p>
+  </div>`;
+  const bc=$('bcopy');
+  if(bc) bc.onclick=()=>{$('code').select();document.execCommand('copy');
+    bc.textContent='Copied ✓';};
+  const bf=$('bform');
+  if(bf) bf.onclick=()=>window.open(CONFIG.formUrl,'_blank');
+  const bd=$('bdl');
+  if(bd) bd.onclick=()=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));
+    a.download='listening_test_result.txt'; a.click(); };
+}
+
+startPage();
+</script></body></html>
